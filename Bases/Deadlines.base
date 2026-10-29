@@ -1,0 +1,23 @@
+filters:
+  and:
+    - if(due, true, false)
+    - status != "done"
+    - status != "archived"
+    - status != "closed"
+formulas:
+  days_left: if(due, (date(due) - today()).days, "")
+properties:
+  formula.days_left:
+    displayName: Days left
+views:
+  - type: table
+    name: Upcoming
+    order:
+      - file.name
+      - due
+      - formula.days_left
+      - type
+      - next
+    sort:
+      - property: due
+        direction: ASC

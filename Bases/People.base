@@ -1,0 +1,42 @@
+filters:
+  and:
+    - type == "person"
+    - file.inFolder("wiki/People")
+formulas:
+  birthday_this_year: if(birthday, date(birthday) + (duration("1y") * (today().year - date(birthday).year)), "")
+  next_birthday: if(birthday, if(formula.birthday_this_year < today(), formula.birthday_this_year + "1y", formula.birthday_this_year), "")
+  days_to_birthday: if(birthday, (formula.next_birthday - today()).days, "")
+  turns: if(birthday, formula.next_birthday.year - date(birthday).year, "")
+properties:
+  formula.next_birthday:
+    displayName: Next birthday
+  formula.days_to_birthday:
+    displayName: Days to go
+  formula.turns:
+    displayName: Turns
+views:
+  - type: table
+    name: Upcoming birthdays
+    filters:
+      and:
+        - birthday
+    order:
+      - file.name
+      - formula.next_birthday
+      - formula.days_to_birthday
+      - formula.turns
+      - location
+    sort:
+      - property: formula.days_to_birthday
+        direction: ASC
+  - type: table
+    name: Everyone
+    groupBy:
+      property: circle
+      direction: ASC
+    order:
+      - file.name
+      - relation
+      - location
+      - birthday
+      - status

@@ -1,0 +1,65 @@
+name: weekly lint
+
+# Every Sunday evening: an agent runs the weekly lint from CLAUDE.md (file the inbox, make next
+# week's note with carried-over to-dos, renewals and birthdays, tidy and check pages, scan for
+# secrets, rebuild the index). Needs the repo secret CLAUDE_CODE_OAUTH_TOKEN, like file-inbox.
+on:
+  schedule:
+    - cron: "0 19 * * 0" # Sunday 20:00 in London during summer time, 19:00 in winter (cron is UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-lint
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/London # keep in step with Settings in CLAUDE.md
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Git identity
+        run: |
+          git config user.name "second-brain lint"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Weekly lint
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --max-turns 120
+            --allowedTools "Read,Write,Edit,Glob,Grep,WebFetch,Bash(git status:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git commit:*),Bash(git diff:*),Bash(git log:*),Bash(ls:*),Bash(date:*)"
+          prompt: |
+            You are running the weekly lint of a second brain. The repository is checked out in the
+            working directory. Read CLAUDE.md in full first and follow its "Weekly lint (Sundays)"
+            steps exactly; its rules win over anything here. No one is available to answer questions
+            during this run, so leave anything that needs the owner in the log entry instead.
+
+            Useful facts: TZ is set to the vault time zone. This week is `date +%G-W%V`; next week is
+            `date -d 'next monday' +%G-W%V`. When creating a weekly note from Templates/Weekly.md,
+            replace the template date placeholders with the real week.
+
+            Make one commit at the end: `chore(lint): weekly lint YYYY-Www` (this week). Do not push.
+
+      - name: Push
+        run: |
+          if [ "$(git rev-list --count origin/main..HEAD)" = "0" ]; then
+            echo "Nothing changed."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1

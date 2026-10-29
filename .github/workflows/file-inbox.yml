@@ -1,0 +1,108 @@
+name: file inbox
+
+# On every push that touches Inbox/, plus once a day as a backstop: an agent files everything in
+# Inbox/ by the rules in CLAUDE.md, so captures reach their pages within minutes whether or not a
+# computer is on. The filing run pushes with GITHUB_TOKEN, which doesn't start workflows, so it
+# can't trigger itself. The concurrency group keeps one run active and at most one queued.
+#
+# Needs the repo secret CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token` once and paste the
+# result into Settings > Secrets and variables > Actions). INBOX_HEARTBEAT_URL is optional
+# (a healthchecks.io ping URL).
+on:
+  push:
+    branches: [main]
+    paths: ["Inbox/**"]
+  schedule:
+    - cron: "10 22 * * *" # 23:10 in London during summer time, 22:10 in winter (cron is UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: file-inbox
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/London # keep in step with Settings in CLAUDE.md
+
+jobs:
+  file:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Anything to file?
+        id: inbox
+        run: |
+          shopt -s nullglob
+          files=(Inbox/*.md)
+          echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
+          echo "${#files[@]} item(s) in Inbox/"
+
+      - name: Git identity
+        if: steps.inbox.outputs.count != '0'
+        run: |
+          git config user.name "second-brain inbox"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: File the inbox
+        if: steps.inbox.outputs.count != '0'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git diff:*),Bash(git log:*),Bash(ls:*),Bash(date:*)"
+          prompt: |
+            You are filing the inbox of a second brain. The repository is checked out in the working
+            directory. Read CLAUDE.md in full first and follow it exactly; its rules win over anything
+            here. No one is available to answer questions during this run.
+
+            Do only this:
+            1. For each file in Inbox/ (except .gitkeep), work out what it is and file it under the
+               "Capture" rules in CLAUDE.md.
+               - A durable fact goes on the right wiki/ page (create one from Templates/ if needed),
+                 with `updated` bumped and wiki/index.md updated when a page is added.
+               - A task (including a line like `- [ ] ...`) is appended to the current ISO week's note
+                 in Weekly/ under "## To do" (`date +%G-W%V` gives the week; TZ is already set). If
+                 that note doesn't exist, create it from Templates/Weekly.md, replacing the template
+                 date placeholders with the real week.
+               - The owner's own writing or thinking goes to Notes/ as a new note, unchanged.
+               - Attachments the capture embeds stay in Attachments/; link them from wherever the
+                 capture was filed.
+               - Anything you can't place with confidence stays in Inbox/, untouched.
+            2. Delete each filed item from Inbox/ with `git rm`.
+            3. Append one entry to wiki/log.md: `## YYYY-MM-DD capture | Inbox filing HH:MM`, one line
+               per item filed or left behind.
+            4. Commit everything as one commit: `chore(inbox): file inbox YYYY-MM-DD HH:MM`. Do not push.
+
+            Never write secrets, and never write opinions as if the owner wrote them. Facts about
+            other people follow the People rules in CLAUDE.md. Don't touch Home.md, raw/, .obsidian/
+            or anything outside Inbox/, Weekly/, Notes/ (new files only) and wiki/.
+
+      - name: Push
+        if: steps.inbox.outputs.count != '0'
+        run: |
+          if [ "$(git rev-list --count origin/main..HEAD)" = "0" ]; then
+            echo "Nothing was filed."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1
+
+      - name: Heartbeat
+        if: always()
+        env:
+          URL: ${{ secrets.INBOX_HEARTBEAT_URL }}
+          OK: ${{ job.status == 'success' }}
+        run: |
+          [ -z "$URL" ] && exit 0
+          if [ "$OK" = "true" ]; then curl -fsS -m 10 --retry 3 "$URL" >/dev/null; else curl -fsS -m 10 --retry 3 "$URL/fail" >/dev/null; fi

@@ -1,0 +1,35 @@
+filters:
+  and:
+    - type == "project"
+    - file.inFolder("wiki/Projects")
+formulas:
+  days_since_update: if(updated, (today() - date(updated)).days, "")
+properties:
+  formula.days_since_update:
+    displayName: Days since update
+views:
+  - type: table
+    name: Active
+    filters:
+      or:
+        - status == "active"
+        - status == "paused"
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - status
+      - next
+      - due
+      - formula.days_since_update
+  - type: table
+    name: All
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - status
+      - started
+      - updated

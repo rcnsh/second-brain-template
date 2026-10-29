@@ -1,0 +1,24 @@
+filters:
+  and:
+    - or:
+        - type == "household"
+        - type == "money"
+    - if(renews, true, false)
+    - status == "active"
+formulas:
+  days_left: (date(renews) - today()).days
+properties:
+  formula.days_left:
+    displayName: Days left
+views:
+  - type: table
+    name: Renewals
+    order:
+      - file.name
+      - provider
+      - renews
+      - formula.days_left
+      - cost
+    sort:
+      - property: renews
+        direction: ASC

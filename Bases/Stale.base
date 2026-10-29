@@ -1,0 +1,15 @@
+filters:
+  and:
+    - file.inFolder("wiki")
+    - updated
+formulas:
+  age: (today() - date(updated)).days
+views:
+  - type: table
+    name: Stale (90+ days)
+    filters: formula.age > 90
+    order:
+      - file.name
+      - type
+      - updated
+      - formula.age
